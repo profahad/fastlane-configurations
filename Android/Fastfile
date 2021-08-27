@@ -1,0 +1,158 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:android)
+
+platform :android do
+
+    desc "Runs all the tests"
+    lane :test do
+        gradle(task: "test")
+    end
+
+    desc "Capture ScreenShots"
+    lane :screenshots do
+        gradle(task: "clean assembleDebug assembleAndroidTest")
+        screengrab
+    end
+
+    desc "Incremental version code"
+    lane :incrementBuildNumber do
+        path = '../app/build.gradle'
+        re = /versionCode\s+(\d+)/
+        s = File.read(path)
+        versionCode = s[re, 1].to_i
+        s[re, 1] = (versionCode + 1).to_s
+        f = File.new(path, 'w')
+        f.write(s)
+        f.close
+    end
+
+    desc "Push incremental versioning"
+    lane :gitpush do
+        git_add
+        git_commit(path: "*", message: "Build Versioning")
+        push_to_git_remote
+        end
+        
+    desc "Submit build on internal track"
+    lane :internal do
+        incrementBuildNumber()
+        gradle(task: "clean")
+        gitpush()
+        versions = google_play_track_version_codes(track: "internal")
+        version_code = versions[0]
+        gradle(
+        task: 'bundle',
+        build_type: 'Release',
+        properties: {
+        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
+        "android.injected.signing.store.password" => "Put Password Here",
+        "android.injected.signing.key.alias" => "Put Alias Here",
+        "android.injected.signing.key.password" => "Put Password Here"
+        }
+        )
+        upload_to_play_store(
+        track: "internal",
+        skip_upload_metadata: false,
+        skip_upload_images: true,
+        skip_upload_screenshots: false,
+        skip_upload_apk: true,
+        skip_upload_aab: false
+        )
+    end
+
+    desc "Submit build on alpha track"
+    lane :alpha do
+        incrementBuildNumber()
+        gradle(task: "clean")
+        gitpush()
+        versions = google_play_track_version_codes(track: "alpha")
+        version_code = versions[0]
+        gradle(
+        task: 'bundle',
+        build_type: 'Release',
+        properties: {
+        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
+        "android.injected.signing.store.password" => "Put Password Here",
+        "android.injected.signing.key.alias" => "Put Alias Here",
+        "android.injected.signing.key.password" => "Put Password Here"
+        }
+        )
+        upload_to_play_store(
+        track: "alpha",
+        skip_upload_metadata: false,
+        skip_upload_images: true,
+        skip_upload_screenshots: true,
+        skip_upload_apk: true,
+        skip_upload_aab: false
+        )
+    end
+
+    desc "Submit build on beta track"
+    lane :beta do
+        incrementBuildNumber()
+        gradle(task: "clean")
+        gitpush()
+        versions = google_play_track_version_codes(track: "beta")
+        version_code = versions[0]
+        gradle(
+        task: 'bundle',
+        build_type: 'Release',
+        properties: {
+        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
+        "android.injected.signing.store.password" => "Put Password Here",
+        "android.injected.signing.key.alias" => "Put Alias Here",
+        "android.injected.signing.key.password" => "Put Password Here"
+        }
+        )
+        upload_to_play_store(
+        track: "beta",
+        skip_upload_metadata: false,
+        skip_upload_images: true,
+        skip_upload_screenshots: true,
+        skip_upload_apk: true,
+        skip_upload_aab: false
+        )
+    end
+
+    desc "Submit build on production track"
+    lane :production do
+        incrementBuildNumber()
+        gradle(task: "clean")
+        gitpush()
+        versions = google_play_track_version_codes(track: "production")
+        version_code = versions[0]
+        gradle(
+        task: 'bundle',
+        build_type: 'Release',
+        properties: {
+        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
+        "android.injected.signing.store.password" => "Put Password Here",
+        "android.injected.signing.key.alias" => "Put Alias Here",
+        "android.injected.signing.key.password" => "Put Password Here"
+        }
+        )
+        upload_to_play_store(
+        track: "production",
+        skip_upload_metadata: false,
+        skip_upload_images: true,
+        skip_upload_screenshots: true,
+        skip_upload_apk: true,
+        skip_upload_aab: false
+        )
+    end
+    
+end
