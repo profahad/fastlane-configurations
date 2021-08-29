@@ -17,142 +17,198 @@ default_platform(:android)
 
 platform :android do
 
-    desc "Runs all the tests"
-    lane :test do
-        gradle(task: "test")
+  def increment_version_code()
+    path = '../app/build.gradle'
+    re = /versionCode\s+(\d+)/
+
+    s = File.read(path)
+    versionCode = s[re, 1].to_i
+    s[re, 1] = (versionCode + 1).to_s
+
+    f = File.new(path, 'w')
+    f.write(s)
+    f.close
+  end
+
+  def increment_version_number(bump_type: nil, version_number: nil)
+    path = '../app/build.gradle'
+    re = /versionName\s+("\d+.\d+.\d+")/
+    s = File.read(path)
+    versionName = s[re, 1].gsub!('"','').split('.')
+
+    major = versionName[0].to_i
+    minor = versionName[1].to_i
+    patch = versionName[2].to_i
+
+    if (bump_type == 'major')
+        major += 1
+        minor = 0
+        patch = 0
+    elsif (bump_type == 'minor')
+        minor += 1
+        patch = 0
+    elsif (bump_type == 'patch')
+        patch += 1
     end
 
-    desc "Capture ScreenShots"
-    lane :screenshots do
-        gradle(task: "clean assembleDebug assembleAndroidTest")
-        screengrab
+    if(version_number)
+      s[re, 1] = "\"#{version_number}\""
+    else
+      s[re, 1] = "\"#{major}.#{minor}.#{patch}\""
     end
 
-    desc "Incremental version code"
-    lane :incrementBuildNumber do
-        path = '../app/build.gradle'
-        re = /versionCode\s+(\d+)/
-        s = File.read(path)
-        versionCode = s[re, 1].to_i
-        s[re, 1] = (versionCode + 1).to_s
-        f = File.new(path, 'w')
-        f.write(s)
-        f.close
+    f = File.new(path, 'w')
+    f.write(s)
+    f.close
+    increment_version_code()
+  end
+
+  def updateVersion(options)
+    if options[:version]
+      version = options[:version]
+    else
+      version = prompt(text: "Enter the version type or specific version\n(major, minor, patch or 1.0.0): ")
     end
 
-    desc "Push incremental versioning"
-    lane :gitpush do
-        git_add
-        git_commit(path: "*", message: "Build Versioning")
-        push_to_git_remote
-        end
-        
-    desc "Submit build on internal track"
-    lane :internal do
-        incrementBuildNumber()
-        gradle(task: "clean")
-        gitpush()
-        versions = google_play_track_version_codes(track: "internal")
-        version_code = versions[0]
-        gradle(
-        task: 'bundle',
-        build_type: 'Release',
-        properties: {
-        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
-        "android.injected.signing.store.password" => "Put Password Here",
-        "android.injected.signing.key.alias" => "Put Alias Here",
-        "android.injected.signing.key.password" => "Put Password Here"
-        }
-        )
-        upload_to_play_store(
+    re = /\d+.\d+.\d+/
+    versionNum = version[re, 0]
+
+    if (versionNum)
+      increment_version_number(
+        version_number: versionNum
+      )
+    elsif (version == 'major' || version == 'minor' || version == 'patch')
+      increment_version_number(
+        bump_type: version
+      )
+    else
+      UI.user_error!("[ERROR] Wrong version!!!!!!")
+    end
+  end
+
+  lane :genChangelog do
+    path = '../app/build.gradle'
+    re = /versionCode\s+(\d+)/
+    s = File.read(path)
+    versionCode = s[re, 1].to_i
+    puts versionCode
+    file = "metadata/android/en-GB/changelogs/#{versionCode}.txt"
+    puts file
+    f = File.new(file, 'w')
+    f.write(
+        "- Security Enhancements\n" +
+        "- Performance Improvements"
+    )
+    f.close
+  end
+
+  desc "Runs all the tests"
+  lane :test do
+    gradle(task: "test")
+  end
+
+  desc "Capture ScreenShots"
+  lane :screenshots do
+    gradle(task: "clean assembleDebug assembleAndroidTest")
+    screengrab
+  end
+
+  desc "Push incremental versioning"
+  lane :gitpush do
+     git_add
+     git_commit(path: "*", message: "Build Versioning")
+     push_to_git_remote
+  end
+
+  desc "Beta channel firebase distribution"
+  lane :beta do |options|
+    updateVersion(options)
+    gradle(task: "clean assembleRelease")
+    firebase_app_distribution(
+        app: "1:144889597189:android:766b0f0b754ea9e5b03b6c",
+        groups: "transdata",
+        release_notes: "CD Integration"
+    )
+  end
+
+  desc "Submit build on internal track"
+  lane :internal do |options|
+    updateVersion(options)
+    genChangelog()
+    gradle(task: "clean")
+    gitpush()
+    gradle(
+        task: 'clean bundle',
+        build_type: 'Release'
+    )
+    upload_to_play_store(
         track: "internal",
         skip_upload_metadata: false,
         skip_upload_images: true,
         skip_upload_screenshots: false,
         skip_upload_apk: true,
         skip_upload_aab: false
-        )
-    end
+    )
+  end
 
-    desc "Submit build on alpha track"
-    lane :alpha do
-        incrementBuildNumber()
-        gradle(task: "clean")
-        gitpush()
-        versions = google_play_track_version_codes(track: "alpha")
-        version_code = versions[0]
-        gradle(
-        task: 'bundle',
-        build_type: 'Release',
-        properties: {
-        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
-        "android.injected.signing.store.password" => "Put Password Here",
-        "android.injected.signing.key.alias" => "Put Alias Here",
-        "android.injected.signing.key.password" => "Put Password Here"
-        }
-        )
-        upload_to_play_store(
+  desc "Submit build on alpha track"
+  lane :alpha |options|
+    updateVersion(options)
+    genChangelog()
+    gradle(task: "clean")
+    gitpush()
+    gradle(
+        task: 'clean bundle',
+        build_type: 'Release'
+    )
+    upload_to_play_store(
         track: "alpha",
         skip_upload_metadata: false,
         skip_upload_images: true,
         skip_upload_screenshots: true,
         skip_upload_apk: true,
         skip_upload_aab: false
-        )
-    end
+    )
+  end
 
-    desc "Submit build on beta track"
-    lane :beta do
-        incrementBuildNumber()
-        gradle(task: "clean")
-        gitpush()
-        versions = google_play_track_version_codes(track: "beta")
-        version_code = versions[0]
-        gradle(
-        task: 'bundle',
-        build_type: 'Release',
-        properties: {
-        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
-        "android.injected.signing.store.password" => "Put Password Here",
-        "android.injected.signing.key.alias" => "Put Alias Here",
-        "android.injected.signing.key.password" => "Put Password Here"
-        }
-        )
-        upload_to_play_store(
+  desc "Submit build on beta track"
+  lane :beta do |options|
+    updateVersion(options)
+    genChangelog()
+    gradle(task: "clean")
+    gitpush()
+    gradle(
+        task: 'clean bundle',
+        build_type: 'Release'
+    )
+    upload_to_play_store(
         track: "beta",
         skip_upload_metadata: false,
         skip_upload_images: true,
         skip_upload_screenshots: true,
         skip_upload_apk: true,
         skip_upload_aab: false
-        )
-    end
+    )
+  end
 
-    desc "Submit build on production track"
-    lane :production do
-        incrementBuildNumber()
-        gradle(task: "clean")
-        gitpush()
-        versions = google_play_track_version_codes(track: "production")
-        version_code = versions[0]
-        gradle(
-        task: 'bundle',
-        build_type: 'Release',
-        properties: {
-        "android.injected.signing.store.file" => "/Volumes/Transdata/PlayGround/Android/Composable/FinanceTracker/finance-tracker/app/keys/keystore.jks",
-        "android.injected.signing.store.password" => "Put Password Here",
-        "android.injected.signing.key.alias" => "Put Alias Here",
-        "android.injected.signing.key.password" => "Put Password Here"
-        }
-        )
-        upload_to_play_store(
+  desc "Submit build on production track"
+  lane :production do |options|
+    updateVersion(options)
+    genChangelog()
+    gradle(task: "clean")
+    gitpush()
+    gradle(
+        task: 'clean bundle',
+        build_type: 'Release'
+    )
+    upload_to_play_store(
         track: "production",
         skip_upload_metadata: false,
         skip_upload_images: true,
         skip_upload_screenshots: true,
         skip_upload_apk: true,
         skip_upload_aab: false
-        )
-    end
+    )
+  end
     
 end
